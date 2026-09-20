@@ -3,8 +3,8 @@
 [![CI](https://github.com/vincent-mayer/minipy/actions/workflows/ci.yml/badge.svg)](https://github.com/vincent-mayer/minipy/actions/workflows/ci.yml)
 
 A Python interpreter for a small subset of Python 3, written from scratch in Rust with
-**zero dependencies** — hand-written lexer (including `INDENT`/`DEDENT`), Pratt parser, and
-tree-walking evaluator.
+**zero dependencies** — hand-written lexer (including `INDENT`/`DEDENT`), precedence-climbing parser,
+and tree-walking evaluator.
 
 Every minipy program is valid Python 3, which makes CPython the test oracle: the examples
 in [`examples/`](examples/) are verified byte-for-byte against `python3` in CI.
@@ -72,7 +72,7 @@ comprehensions, generators, decorators, default and keyword arguments, tuple unp
 | File | |
 |---|---|
 | [`src/lexer.rs`](src/lexer.rs) | source → tokens, indentation stack, implicit line joining |
-| [`src/parser.rs`](src/parser.rs) | tokens → AST; recursive descent for statements, Pratt for expressions |
+| [`src/parser.rs`](src/parser.rs) | tokens → AST; recursive descent for statements, precedence climbing for expressions |
 | [`src/interp.rs`](src/interp.rs) | AST → execution; scopes, control flow, calls |
 | [`src/value.rs`](src/value.rs) | the value model and Python's arithmetic and comparison rules |
 | [`tests/`](tests/) | golden-file suites: `cases/*.py` + `.out`, `errors/*.py` + `.err` |

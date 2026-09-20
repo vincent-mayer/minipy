@@ -5,8 +5,12 @@
 //! global scope, and every output byte goes through a caller-supplied
 //! [`Write`] so tests can capture it without spawning a process.
 
+pub mod ast;
+pub mod env;
 pub mod error;
 pub mod lexer;
+pub mod parser;
+pub mod value;
 
 pub use error::{ErrorKind, MiniPyError, Result};
 
