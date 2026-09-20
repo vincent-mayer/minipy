@@ -17,10 +17,12 @@ for output and for exception type — is what shook out the subtle cases: `1.0 %
 
 ```console
 $ cat examples/fib.py
+# Recursion, and the closure-free base case.
 def fib(n):
     if n < 2:
         return n
     return fib(n - 1) + fib(n - 2)
+
 
 for i in range(10):
     print(i, fib(i))
@@ -29,10 +31,26 @@ $ minipy examples/fib.py
 0 0
 1 1
 2 1
+3 2
 ...
 
-$ diff <(python3 examples/fib.py) <(minipy examples/fib.py) && echo "identical"
+$ diff <(python3 examples/fib.py) <(minipy examples/fib.py) && echo identical
 identical
+
+$ minipy
+minipy 0.1.0 — Ctrl-D to exit
+>>> def add(a, b): return a + b
+>>> add(2, 3)
+5
+>>> 1 < 2 < 3
+True
+>>> -7 // 2
+-4
+>>> "ab" * 3
+'ababab'
+>>> nope
+  File "<stdin>", line 1
+NameError: name 'nope' is not defined
 ```
 
 ## Install
@@ -53,7 +71,7 @@ cargo build --release
 | **Statements** | assignment (`=`, `+=`, `-=`, `*=`, `/=`), `if`/`elif`/`else`, `while`, `for … in`, `def`, `return`, `pass`, `break`, `continue` |
 | **Operators** | `or` `and` `not`, `==` `!=` `<` `<=` `>` `>=` (chained), `+` `-` `*` `/` `//` `%` `**`, unary `-` `+` |
 | **Builtins** | `print` `len` `range` `str` `int` `float` `bool` `abs` `min` `max` |
-| **Also** | closures, recursion, comments, `'…'`/`"…"` strings with escapes |
+| **Also** | closures, recursion, comments, `'…'`/`"…"` strings with escapes, `;`-separated statements, one-line bodies (`if x: return 1`) |
 
 `bool` is a subtype of `int`, `/` always yields a float, and `//`/`%` floor toward −∞ and
 take the divisor's sign — as in CPython, not as in Rust.
@@ -83,7 +101,21 @@ comprehensions, generators, decorators, default and keyword arguments, tuple unp
 | [`src/parser.rs`](src/parser.rs) | tokens → AST; recursive descent for statements, precedence climbing for expressions |
 | [`src/interp.rs`](src/interp.rs) | AST → execution; scopes, control flow, calls |
 | [`src/value.rs`](src/value.rs) | the value model and Python's arithmetic and comparison rules |
+| [`src/env.rs`](src/env.rs) | the scope chain, and why an unbound local is not a look outward |
 | [`tests/`](tests/) | golden-file suites: `cases/*.py` + `.out`, `errors/*.py` + `.err` |
+| [`tools/fuzz.py`](tools/fuzz.py) | the differential fuzzer |
+
+## Testing
+
+```sh
+cargo test                              # unit tests + both golden suites + the CPython check
+python3 tools/fuzz.py                   # differential fuzzing against CPython
+python3 tools/fuzz.py --show --seeds 20 # ...harder, printing anything that differs
+```
+
+Adding a case is adding two files: `tests/cases/foo.py` and the output CPython gives for
+it (`python3 tests/cases/foo.py > tests/cases/foo.out`). Error cases pair
+`tests/errors/foo.py` with the report minipy should print, in `foo.err`.
 
 ## License
 
