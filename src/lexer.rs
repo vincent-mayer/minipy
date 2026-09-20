@@ -233,10 +233,8 @@ impl Lexer {
         while self.pos < self.chars.len() {
             // Start of a logical line: measure indentation, unless a bracket
             // is open (then a newline is just whitespace).
-            if self.depth == 0 && self.last_is_newline() {
-                if self.handle_line_start()? {
-                    continue;
-                }
+            if self.depth == 0 && self.last_is_newline() && self.handle_line_start()? {
+                continue;
             }
             self.scan_token()?;
         }
