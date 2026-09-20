@@ -3,6 +3,7 @@
 //! Nodes that can fail at runtime carry the source line, so an error can name
 //! the line the user actually wrote.
 
+use std::collections::HashSet;
 use std::rc::Rc;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -145,6 +146,10 @@ pub enum Stmt {
         params: Vec<String>,
         /// Shared with every closure made from this definition.
         body: Rc<Vec<Stmt>>,
+        /// Every name the body binds. Python decides at compile time that an
+        /// assigned name is local to the whole function, so reading it before
+        /// the assignment is an error rather than a look outward.
+        locals: Rc<HashSet<String>>,
         line: usize,
     },
     Return {
@@ -158,4 +163,39 @@ pub enum Stmt {
     Continue {
         line: usize,
     },
+}
+
+/// Collect the names `body` binds, without descending into nested functions —
+/// a nested `def` is its own scope, though the name it binds is not.
+pub fn bound_names(body: &[Stmt], names: &mut HashSet<String>) {
+    for stmt in body {
+        match stmt {
+            Stmt::Assign { target, .. } | Stmt::AugAssign { target, .. } => {
+                names.insert(target.clone());
+            }
+            Stmt::For { var, body, .. } => {
+                names.insert(var.clone());
+                bound_names(body, names);
+            }
+            Stmt::Def { name, .. } => {
+                names.insert(name.clone());
+            }
+            Stmt::If {
+                branches,
+                otherwise,
+                ..
+            } => {
+                for (_, body) in branches {
+                    bound_names(body, names);
+                }
+                bound_names(otherwise, names);
+            }
+            Stmt::While { body, .. } => bound_names(body, names),
+            Stmt::Expr { .. }
+            | Stmt::Return { .. }
+            | Stmt::Pass
+            | Stmt::Break { .. }
+            | Stmt::Continue { .. } => {}
+        }
+    }
 }

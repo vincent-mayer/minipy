@@ -3,3 +3,6 @@ local
 global
 5
 still works
+inner global
+module function
+6 10

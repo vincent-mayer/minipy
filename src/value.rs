@@ -22,6 +22,8 @@ pub struct Function {
     pub name: String,
     pub params: Vec<String>,
     pub body: Rc<Vec<Stmt>>,
+    /// Names local to this function — see [`crate::ast::bound_names`].
+    pub locals: Rc<std::collections::HashSet<String>>,
     /// The scope the `def` was evaluated in — this is the closure.
     pub closure: Env,
 }
@@ -338,6 +340,9 @@ pub fn binary(op: BinOp, lhs: &Value, rhs: &Value, line: usize) -> Result<Value>
             Ok(Value::Int(floor_mod(x, y)))
         }
         (BinOp::Pow, Num::Int(x), Num::Int(y)) => {
+            if x == 0 && y < 0 {
+                return Err(MiniPyError::zero_division("zero to a negative power", line));
+            }
             if y >= 0 {
                 let exp = u32::try_from(y).map_err(|_| overflowed(line))?;
                 x.checked_pow(exp)
@@ -366,15 +371,38 @@ pub fn binary(op: BinOp, lhs: &Value, rhs: &Value, line: usize) -> Result<Value>
                     if y == 0.0 {
                         return Err(MiniPyError::zero_division("division by zero", line));
                     }
-                    (x / y).floor()
+                    // Derive the quotient from the remainder, as CPython does:
+                    // a plain `(x / y).floor()` loses precision on large
+                    // operands, where `1e16 // 3.0` would come out one low.
+                    ((x - float_mod(x, y)) / y).floor()
                 }
                 BinOp::Mod => {
                     if y == 0.0 {
                         return Err(MiniPyError::zero_division("division by zero", line));
                     }
-                    x - y * (x / y).floor()
+                    float_mod(x, y)
                 }
-                BinOp::Pow => x.powf(y),
+                BinOp::Pow => {
+                    if x == 0.0 && y < 0.0 {
+                        return Err(MiniPyError::zero_division("zero to a negative power", line));
+                    }
+                    // CPython answers with a complex number here; minipy has
+                    // no complex type, so say so rather than return NaN.
+                    if x < 0.0 && y.is_finite() && y.fract() != 0.0 {
+                        return Err(MiniPyError::value(
+                            "negative number cannot be raised to a fractional power \
+                             (minipy has no complex numbers)",
+                            line,
+                        ));
+                    }
+                    let result = x.powf(y);
+                    // Float `**` overflowing is an error in Python, even
+                    // though `*` overflowing to inf is not.
+                    if result.is_infinite() && x.is_finite() && y.is_finite() {
+                        return Err(MiniPyError::overflow("(34, 'Result too large')", line));
+                    }
+                    result
+                }
             };
             Ok(Value::Float(result))
         }
@@ -392,7 +420,20 @@ fn floor_div(x: i64, y: i64) -> Option<i64> {
     })
 }
 
-/// Python's `%`: the result takes the sign of the divisor.
+/// Python's float `%`. Rust's `%` is C's `fmod`, which takes the sign of the
+/// *dividend*; Python's takes the sign of the divisor, down to the sign of a
+/// zero result (`1.0 % -0.5` is `-0.0`).
+fn float_mod(x: f64, y: f64) -> f64 {
+    let m = x % y;
+    if m != 0.0 {
+        if (y < 0.0) != (m < 0.0) { m + y } else { m }
+    } else {
+        // Preserve the divisor's sign on a zero remainder.
+        0.0_f64.copysign(y)
+    }
+}
+
+/// Python's integer `%`: the result takes the sign of the divisor.
 fn floor_mod(x: i64, y: i64) -> i64 {
     let r = x % y;
     if r != 0 && ((r < 0) != (y < 0)) {
@@ -573,6 +614,86 @@ mod tests {
         assert_eq!(ok(BinOp::Mul, Value::str("a"), int(3)), Value::str("aaa"));
         assert_eq!(ok(BinOp::Mul, int(3), Value::str("a")), Value::str("aaa"));
         assert_eq!(ok(BinOp::Mul, Value::str("a"), int(-1)), Value::str(""));
+    }
+
+    #[test]
+    fn zero_to_a_negative_power_is_a_zero_division() {
+        for (base, exponent) in [
+            (int(0), int(-1)),
+            (Value::Float(0.0), int(-1)),
+            (Value::Bool(false), Value::Float(-1000.0)),
+            (int(0), Value::Float(-2.0)),
+        ] {
+            let err = eval(BinOp::Pow, base, exponent).unwrap_err();
+            assert_eq!(
+                err.to_string(),
+                "ZeroDivisionError: zero to a negative power"
+            );
+        }
+    }
+
+    #[test]
+    fn float_power_overflow_is_an_error_but_multiplication_overflow_is_not() {
+        let err = eval(BinOp::Pow, int(3), Value::Float(1e3)).unwrap_err();
+        assert_eq!(err.to_string(), "OverflowError: (34, 'Result too large')");
+
+        // As in CPython, `*` is allowed to reach infinity.
+        assert_eq!(
+            ok(BinOp::Mul, Value::Float(1e308), Value::Float(10.0)),
+            Value::Float(f64::INFINITY)
+        );
+        // An infinite operand passes through rather than erroring.
+        assert_eq!(
+            ok(BinOp::Pow, Value::Float(f64::INFINITY), Value::Float(2.0)),
+            Value::Float(f64::INFINITY)
+        );
+    }
+
+    #[test]
+    fn a_fractional_power_of_a_negative_number_is_rejected() {
+        let err = eval(BinOp::Pow, Value::Float(-2.0), Value::Float(0.5)).unwrap_err();
+        assert_eq!(err.kind, crate::ErrorKind::Value);
+        assert!(err.to_string().contains("no complex numbers"));
+        // A whole-number exponent is still fine.
+        assert_eq!(
+            ok(BinOp::Pow, Value::Float(-2.0), Value::Float(3.0)),
+            Value::Float(-8.0)
+        );
+    }
+
+    #[test]
+    fn float_modulo_keeps_the_divisors_sign_even_at_zero() {
+        // CPython: 1.0 % -0.5 is -0.0, not 0.0.
+        let minus_zero = ok(BinOp::Mod, Value::Float(1.0), Value::Float(-0.5));
+        assert_eq!(minus_zero.repr(), "-0.0");
+        let plus_zero = ok(BinOp::Mod, Value::Float(-1.0), Value::Float(0.5));
+        assert_eq!(plus_zero.repr(), "0.0");
+
+        assert_eq!(
+            ok(BinOp::Mod, Value::Float(5.0), Value::Float(-3.5)),
+            Value::Float(-2.0)
+        );
+        assert_eq!(
+            ok(BinOp::Mod, Value::Float(-5.0), Value::Float(3.5)),
+            Value::Float(2.0)
+        );
+    }
+
+    #[test]
+    fn float_floor_division_stays_exact_on_large_operands() {
+        // `(1e16 / 3.0).floor()` rounds to 3333333333333334.0.
+        assert_eq!(
+            ok(BinOp::FloorDiv, Value::Float(1e16), Value::Float(3.0)),
+            Value::Float(3333333333333333.0)
+        );
+        assert_eq!(
+            ok(BinOp::FloorDiv, Value::Float(5.0), Value::Float(-3.5)),
+            Value::Float(-2.0)
+        );
+        assert_eq!(
+            ok(BinOp::FloorDiv, Value::Float(-5.0), Value::Float(3.5)),
+            Value::Float(-2.0)
+        );
     }
 
     #[test]

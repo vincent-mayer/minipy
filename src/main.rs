@@ -62,6 +62,13 @@ fn run_file(path: &str) -> ExitCode {
 
     match result {
         Ok(()) => ExitCode::SUCCESS,
+        // `minipy script.py | head` closes the pipe early; that is not a
+        // failure of the program, so say nothing and exit cleanly.
+        Err(err) if err.is_broken_pipe() => ExitCode::SUCCESS,
+        Err(err) if err.kind == minipy::ErrorKind::Io => {
+            eprintln!("minipy: {}", err.msg);
+            ExitCode::FAILURE
+        }
         Err(err) => {
             eprintln!("{}", err.report(path));
             ExitCode::FAILURE
@@ -106,6 +113,9 @@ fn repl() -> ExitCode {
         }
 
         if let Err(err) = session.feed(&buffer, &mut out) {
+            if err.is_broken_pipe() {
+                break;
+            }
             let _ = out.flush();
             eprintln!("{}", err.report("<stdin>"));
         }

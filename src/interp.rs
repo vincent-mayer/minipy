@@ -13,7 +13,7 @@ use std::rc::Rc;
 
 use crate::ast::{Expr, Stmt, UnOp};
 use crate::builtins;
-use crate::env::Env;
+use crate::env::{Env, Lookup};
 use crate::error::{MiniPyError, Result};
 use crate::value::{self, Function, Value};
 
@@ -96,7 +96,14 @@ impl<'out> Interpreter<'out> {
                 value,
                 line,
             } => {
-                let current = env.get(target).ok_or_else(|| undefined(target, *line))?;
+                // `n += 1` both reads and binds `n`, which makes `n` local
+                // to the enclosing function — so an outer `n` is not in scope
+                // here, exactly as CPython decides at compile time.
+                let current = match env.get_local(target) {
+                    Some(value) => value,
+                    None if env.is_global() => return Err(undefined(target, *line)),
+                    None => return Err(unbound_local(target, *line)),
+                };
                 let rhs = self.eval(value, env)?;
                 env.set(target, value::binary(*op, &current, &rhs, *line)?);
                 Ok(Flow::Normal)
@@ -145,12 +152,17 @@ impl<'out> Interpreter<'out> {
             }
 
             Stmt::Def {
-                name, params, body, ..
+                name,
+                params,
+                body,
+                locals,
+                ..
             } => {
                 let function = Function {
                     name: name.clone(),
                     params: params.clone(),
                     body: Rc::clone(body),
+                    locals: Rc::clone(locals),
                     // Capturing the defining scope is what makes closures work.
                     closure: env.clone(),
                 };
@@ -179,7 +191,18 @@ impl<'out> Interpreter<'out> {
             Expr::Bool(b) => Ok(Value::Bool(*b)),
             Expr::None => Ok(Value::None),
 
-            Expr::Name { name, line } => env.get(name).ok_or_else(|| undefined(name, *line)),
+            Expr::Name { name, line } => match env.lookup(name) {
+                Lookup::Found(value) => Ok(value),
+                Lookup::Unbound => Err(unbound_local(name, *line)),
+                Lookup::UnboundFree => Err(MiniPyError::name(
+                    format!(
+                        "cannot access free variable '{name}' where it is not \
+                         associated with a value in enclosing scope"
+                    ),
+                    *line,
+                )),
+                Lookup::Missing => Err(undefined(name, *line)),
+            },
 
             Expr::Unary { op, operand, line } => {
                 let value = self.eval(operand, env)?;
@@ -266,7 +289,7 @@ impl<'out> Interpreter<'out> {
                     ));
                 }
 
-                let frame = function.closure.child();
+                let frame = function.closure.frame(Rc::clone(&function.locals));
                 for (param, arg) in function.params.iter().zip(args) {
                     frame.set(param, arg);
                 }
@@ -315,6 +338,13 @@ fn undefined(name: &str, line: usize) -> MiniPyError {
     MiniPyError::name(format!("name '{name}' is not defined"), line)
 }
 
+fn unbound_local(name: &str, line: usize) -> MiniPyError {
+    MiniPyError::unbound_local(
+        format!("cannot access local variable '{name}' where it is not associated with a value"),
+        line,
+    )
+}
+
 pub fn write_failed(err: &std::io::Error) -> MiniPyError {
-    MiniPyError::value(format!("could not write output: {err}"), 0)
+    MiniPyError::io(err)
 }

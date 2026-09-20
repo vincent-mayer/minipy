@@ -1,0 +1,2 @@
+  File "tests/errors/unbound_local.py", line 5
+UnboundLocalError: cannot access local variable 'n' where it is not associated with a value

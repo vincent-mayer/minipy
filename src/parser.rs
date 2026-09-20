@@ -9,7 +9,7 @@
 
 use std::rc::Rc;
 
-use crate::ast::{BinOp, CmpOp, Expr, Stmt, UnOp};
+use crate::ast::{BinOp, CmpOp, Expr, Stmt, UnOp, bound_names};
 use crate::error::{MiniPyError, Result};
 use crate::lexer::{Tok, Token, tokenize};
 
@@ -335,10 +335,17 @@ impl Parser {
         self.functions -= 1;
         self.loops = enclosing_loops;
 
+        let body = body?;
+        // Python treats every name a function binds as local to the whole
+        // function, so work out that set once, here.
+        let mut locals: std::collections::HashSet<String> = params.iter().cloned().collect();
+        bound_names(&body, &mut locals);
+
         Ok(Stmt::Def {
             name,
             params,
-            body: Rc::new(body?),
+            body: Rc::new(body),
+            locals: Rc::new(locals),
             line,
         })
     }
