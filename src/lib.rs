@@ -82,10 +82,21 @@ impl Repl {
     }
 }
 
-/// Whether a REPL buffer is still open and needs another line.
-///
-/// True while a block header awaits its body or a `(` is unclosed.
-pub fn is_incomplete(src: &str) -> bool {
+/// Why a REPL buffer is not ready to run yet — or that it is.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Continuation {
+    /// Run it.
+    Complete,
+    /// An open `(` or a trailing `\`: the statement continues on the next
+    /// line, and runs as soon as it is closed.
+    Unclosed,
+    /// A `:` header: an indented body follows, and the block runs at the
+    /// first blank line.
+    BlockHeader,
+}
+
+/// Classify a REPL buffer, so the prompt knows whether to keep reading.
+pub fn continuation(src: &str) -> Continuation {
     let mut depth = 0i32;
     let mut last_significant = None;
 
@@ -118,7 +129,16 @@ pub fn is_incomplete(src: &str) -> bool {
         }
     }
 
-    depth > 0 || last_significant == Some(':')
+    // A trailing backslash joins the next line, in code and inside strings.
+    let continued = src.trim_end_matches(['\n', '\r']).ends_with('\\');
+
+    if depth > 0 || continued {
+        Continuation::Unclosed
+    } else if last_significant == Some(':') {
+        Continuation::BlockHeader
+    } else {
+        Continuation::Complete
+    }
 }
 
 #[cfg(test)]
@@ -126,21 +146,31 @@ mod tests {
     use super::*;
 
     #[test]
-    fn open_block_is_incomplete() {
-        assert!(is_incomplete("if x:"));
-        assert!(is_incomplete("def f(a):  # start"));
-        assert!(!is_incomplete("x = 1"));
+    fn a_block_header_waits_for_its_body() {
+        assert_eq!(continuation("if x:"), Continuation::BlockHeader);
+        assert_eq!(
+            continuation("def f(a):  # start"),
+            Continuation::BlockHeader
+        );
+        assert_eq!(continuation("if x:\n    pass\n"), Continuation::Complete);
     }
 
     #[test]
-    fn open_paren_is_incomplete() {
-        assert!(is_incomplete("print("));
-        assert!(!is_incomplete("print()"));
+    fn an_unclosed_paren_or_backslash_continues_the_statement() {
+        assert_eq!(continuation("print("), Continuation::Unclosed);
+        assert_eq!(continuation("print()"), Continuation::Complete);
+        assert_eq!(continuation("x = 1 + \\\n"), Continuation::Unclosed);
+        assert_eq!(continuation("x = 1 + \\\n    2\n"), Continuation::Complete);
     }
 
     #[test]
-    fn colon_inside_a_string_does_not_open_a_block() {
-        assert!(!is_incomplete("x = 'a:'"));
-        assert!(!is_incomplete("x = \"(\""));
+    fn a_colon_or_paren_inside_a_string_does_not_open_anything() {
+        assert_eq!(continuation("x = 'a:'"), Continuation::Complete);
+        assert_eq!(continuation("x = \"(\""), Continuation::Complete);
+    }
+
+    #[test]
+    fn a_plain_statement_is_ready_to_run() {
+        assert_eq!(continuation("x = 1"), Continuation::Complete);
     }
 }

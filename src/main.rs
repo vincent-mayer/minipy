@@ -3,7 +3,7 @@
 use std::io::{self, BufRead, Write};
 use std::process::ExitCode;
 
-use minipy::{Repl, is_incomplete, run_source};
+use minipy::{Continuation, Repl, continuation, run_source};
 
 const USAGE: &str = "\
 usage: minipy [script.py]
@@ -85,6 +85,8 @@ fn repl() -> ExitCode {
     let stdout = io::stdout();
     let mut out = stdout.lock();
     let mut buffer = String::new();
+    // True once a `:` header has been entered: its body ends at a blank line.
+    let mut in_block = false;
 
     loop {
         let prompt = if buffer.is_empty() { ">>> " } else { "... " };
@@ -100,16 +102,22 @@ fn repl() -> ExitCode {
             }
         };
 
-        // A continuation ends at a blank line; a fresh blank line is a no-op.
         if buffer.is_empty() && line.trim().is_empty() {
             continue;
         }
         buffer.push_str(&line);
         buffer.push('\n');
-        // A multi-line block keeps collecting until the user enters a blank line.
-        let multiline = buffer.trim_end().contains('\n');
-        if is_incomplete(&buffer) || (multiline && !line.trim().is_empty()) {
-            continue;
+
+        match continuation(&buffer) {
+            // Still open: read on, whatever kind of buffer this is.
+            Continuation::Unclosed => continue,
+            Continuation::BlockHeader => {
+                in_block = true;
+                continue;
+            }
+            // Complete, but an indented body may still be coming.
+            Continuation::Complete if in_block && !line.trim().is_empty() => continue,
+            Continuation::Complete => {}
         }
 
         if let Err(err) = session.feed(&buffer, &mut out) {
@@ -121,6 +129,7 @@ fn repl() -> ExitCode {
         }
         let _ = out.flush();
         buffer.clear();
+        in_block = false;
     }
 
     let _ = writeln!(out);

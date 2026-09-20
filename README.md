@@ -91,7 +91,8 @@ comprehensions, generators, decorators, default and keyword arguments, tuple unp
 - **No complex numbers**, so `(-2.0) ** 0.5` is an error rather than a complex result.
 - **Integers are 64-bit**, not arbitrary precision; overflow raises `OverflowError`.
 - **Recursion is capped at 1000 frames**, then `RecursionError`.
-- The REPL reads plain lines: no history, no arrow keys. A block ends at a blank line.
+- The REPL reads plain lines: no history, no arrow keys. An indented block ends at a
+  blank line; an unclosed `(` or a trailing `\` runs as soon as it is closed.
 
 ## Layout
 

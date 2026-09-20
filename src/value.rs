@@ -17,6 +17,12 @@ use crate::ast::{BinOp, CmpOp, Stmt};
 use crate::env::Env;
 use crate::error::{MiniPyError, Result};
 
+/// A user-defined function.
+///
+/// Note that a recursive function forms a reference cycle: the scope holding
+/// it is the scope it captured, so neither is ever dropped. That leaks for as
+/// long as the process runs, which for an interpreter invoked per script is
+/// the right trade against the cost of weak references everywhere.
 #[derive(Debug)]
 pub struct Function {
     pub name: String,
