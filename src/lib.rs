@@ -6,6 +6,7 @@
 //! [`Write`] so tests can capture it without spawning a process.
 
 pub mod error;
+pub mod lexer;
 
 pub use error::{ErrorKind, MiniPyError, Result};
 
