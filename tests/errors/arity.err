@@ -1,0 +1,2 @@
+  File "tests/errors/arity.py", line 5
+TypeError: add() takes 2 positional arguments but 1 was given

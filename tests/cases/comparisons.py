@@ -1,0 +1,7 @@
+print(1 < 2 < 3, 1 < 3 < 2, 3 > 2 > 1)
+print(1 == 1.0, 1 == True, 0 == False, None == 0)
+print("a" < "b", "abc" < "abd", "Z" < "a")
+print(1 != 2, "a" != "a", None != None)
+print(not 0, not "", not None, not 1, not "x")
+print(1 and 2, 0 and 2, 1 or 2, 0 or 2, "" or "fallback")
+print(2 <= 2 <= 2, 1 >= 2)

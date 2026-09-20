@@ -1,0 +1,2 @@
+  File "tests/errors/zero_division.py", line 2
+ZeroDivisionError: division by zero

@@ -1,0 +1,2 @@
+  File "tests/errors/overflow.py", line 2
+OverflowError: integer result is too large for minipy's 64-bit ints

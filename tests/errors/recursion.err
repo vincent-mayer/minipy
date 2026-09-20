@@ -1,0 +1,2 @@
+  File "tests/errors/recursion.py", line 2
+RecursionError: maximum recursion depth exceeded

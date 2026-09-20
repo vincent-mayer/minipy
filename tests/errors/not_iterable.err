@@ -1,0 +1,2 @@
+  File "tests/errors/not_iterable.py", line 1
+TypeError: 'int' object is not iterable

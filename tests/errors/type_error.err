@@ -1,0 +1,2 @@
+  File "tests/errors/type_error.py", line 1
+TypeError: unsupported operand type(s) for +: 'int' and 'str'

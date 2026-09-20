@@ -1,0 +1,2 @@
+  File "tests/errors/break_outside_loop.py", line 2
+SyntaxError: 'break' outside loop

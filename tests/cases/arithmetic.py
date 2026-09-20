@@ -1,0 +1,11 @@
+# The places Python and Rust disagree.
+print(4 / 2, 1 / 2, 7 / 2)
+print(-7 // 2, -7 // -2, 7 // -2, 7 // 2)
+print(-7 % 2, -7 % -2, 7 % -2, 7 % 2)
+print(2 ** 10, 2 ** -1, 2 ** 0, (-2) ** 3)
+print(-2 ** 2, 2 ** 3 ** 2)
+print(7.0 // 2, -7.0 // 2, 7.5 % 2)
+print(True + True, True * 5, False - 1)
+print(1 + 2 * 3 - 4 // 2, (1 + 2) * 3)
+print(abs(-5), abs(-5.5), abs(3))
+print(1e16, 1e15, 0.1 + 0.2, 1 / 3)

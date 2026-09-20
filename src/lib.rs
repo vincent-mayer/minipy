@@ -6,8 +6,10 @@
 //! [`Write`] so tests can capture it without spawning a process.
 
 pub mod ast;
+pub mod builtins;
 pub mod env;
 pub mod error;
+pub mod interp;
 pub mod lexer;
 pub mod parser;
 pub mod value;
@@ -16,30 +18,67 @@ pub use error::{ErrorKind, MiniPyError, Result};
 
 use std::io::Write;
 
+use crate::env::Env;
+use crate::interp::Interpreter;
+
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
+/// Stack for the thread the interpreter runs on.
+///
+/// One minipy call costs several nested Rust frames, so the [recursion
+/// limit](interp) of 1000 calls needs far more stack than a thread gets by
+/// default — without this the native stack overflows (and aborts) before the
+/// interpreter can report `RecursionError`.
+pub const STACK_SIZE: usize = 64 * 1024 * 1024;
+
+/// Run `f` on a thread with a stack deep enough for the recursion limit.
+pub fn on_interpreter_stack<T: Send + 'static>(f: impl FnOnce() -> T + Send + 'static) -> T {
+    let worker = std::thread::Builder::new()
+        .stack_size(STACK_SIZE)
+        .spawn(f)
+        .expect("could not spawn the interpreter thread");
+
+    match worker.join() {
+        Ok(value) => value,
+        Err(panic) => std::panic::resume_unwind(panic),
+    }
+}
+
 /// Execute a complete source file, writing program output to `out`.
-pub fn run_source(_src: &str, _out: &mut dyn Write) -> Result<()> {
-    Err(MiniPyError::syntax(
-        "the front end lands in the next commit",
-        1,
-    ))
+pub fn run_source(src: &str, out: &mut dyn Write) -> Result<()> {
+    let program = parser::parse(src)?;
+    Interpreter::new(out).run(&program)
+}
+
+/// Run a program and return what it printed — the shape the tests want.
+pub fn capture(src: &str) -> Result<String> {
+    let mut buffer = Vec::new();
+    run_source(src, &mut buffer)?;
+    Ok(String::from_utf8_lossy(&buffer).into_owned())
 }
 
 /// An interactive session: statements share one persistent global scope.
-#[derive(Default)]
 pub struct Repl {
-    _private: (),
+    globals: Env,
+}
+
+impl Default for Repl {
+    fn default() -> Self {
+        Repl::new()
+    }
 }
 
 impl Repl {
     pub fn new() -> Self {
-        Repl::default()
+        let globals = Env::global();
+        builtins::install(&globals);
+        Repl { globals }
     }
 
     /// Execute one statement buffer. A bare expression echoes its `repr`.
     pub fn feed(&mut self, src: &str, out: &mut dyn Write) -> Result<()> {
-        run_source(src, out)
+        let program = parser::parse(src)?;
+        Interpreter::with_globals(self.globals.clone(), out).run_interactive(&program)
     }
 }
 

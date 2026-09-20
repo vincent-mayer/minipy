@@ -39,10 +39,11 @@ fn main() -> ExitCode {
         }
     }
 
-    match script {
+    // The interpreter needs a deeper stack than a thread gets by default.
+    minipy::on_interpreter_stack(move || match script {
         Some(path) => run_file(&path),
         None => repl(),
-    }
+    })
 }
 
 fn run_file(path: &str) -> ExitCode {
@@ -105,7 +106,8 @@ fn repl() -> ExitCode {
         }
 
         if let Err(err) = session.feed(&buffer, &mut out) {
-            let _ = writeln!(out, "{}", err.report("<stdin>"));
+            let _ = out.flush();
+            eprintln!("{}", err.report("<stdin>"));
         }
         let _ = out.flush();
         buffer.clear();

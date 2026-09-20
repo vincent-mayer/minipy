@@ -1,0 +1,2 @@
+  File "tests/errors/unsupported_feature.py", line 1
+SyntaxError: 'class' is not supported by minipy
