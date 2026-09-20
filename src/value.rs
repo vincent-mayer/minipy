@@ -230,7 +230,8 @@ pub fn format_float(x: f64) -> String {
         .parse()
         .expect("{:e} always emits an integer exponent");
 
-    if exponent < -4 || exponent >= 16 {
+    // Scientific notation below 1e-4 and from 1e16 up, matching CPython.
+    if !(-4..16).contains(&exponent) {
         let sign = if exponent < 0 { '-' } else { '+' };
         format!("{mantissa}e{sign}{:02}", exponent.abs())
     } else {
